@@ -1,19 +1,19 @@
 package com.cute.gallery.ui
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.List
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.PhotoAlbum
-import androidx.compose.material.icons.filled.Photo
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,36 +30,71 @@ import com.cute.gallery.viewmodel.GalleryState
 import com.cute.gallery.viewmodel.GalleryViewModel
 import kotlin.math.max
 import kotlin.math.min
+import android.net.Uri
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun GalleryScreen(viewModel: GalleryViewModel, onRequestPermission: () -> Unit) {
+fun GalleryScreen(viewModel: GalleryViewModel, onRequestPermission: () -> Unit, onShareImages: (List<Uri>) -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
+    val selectedImages by viewModel.selectedImages.collectAsState()
     
     var selectedFolder by remember { mutableStateOf<FolderItem?>(null) }
     var currentTab by remember { mutableStateOf(0) } // 0 = Albums, 1 = Photos
+    var selectedImageToView by remember { mutableStateOf<ImageItem?>(null) }
     
     var isAlbumGrid by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = selectedFolder != null) {
-        selectedFolder = null
+    val isSelectionMode = selectedImages.isNotEmpty()
+
+    BackHandler(enabled = selectedFolder != null || selectedImageToView != null || isSelectionMode) {
+        if (selectedImageToView != null) {
+            selectedImageToView = null
+        } else if (isSelectionMode) {
+            viewModel.clearSelection()
+        } else if (selectedFolder != null) {
+            selectedFolder = null
+        }
+    }
+
+    if (selectedImageToView != null) {
+        FullScreenImageViewer(image = selectedImageToView!!) {
+            selectedImageToView = null
+        }
+        return
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
-                    Text(if (selectedFolder != null) selectedFolder!!.name else if (currentTab == 0) "Albums" else "Photos") 
+                    if (isSelectionMode) {
+                        Text("${selectedImages.size} Selected")
+                    } else if (selectedFolder != null) {
+                        Text(selectedFolder!!.name)
+                    } else {
+                        Text(if (currentTab == 0) "Albums" else "Gallery")
+                    }
                 },
                 navigationIcon = {
-                    if (selectedFolder != null) {
+                    if (isSelectionMode) {
+                        IconButton(onClick = { viewModel.clearSelection() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Cancel Selection")
+                        }
+                    } else if (selectedFolder != null) {
                         IconButton(onClick = { selectedFolder = null }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                         }
                     }
                 },
                 actions = {
-                    if (currentTab == 0 && selectedFolder == null) {
+                    if (isSelectionMode) {
+                        IconButton(onClick = {
+                            onShareImages(viewModel.getSelectedUris())
+                            viewModel.clearSelection()
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = "Share")
+                        }
+                    } else if (currentTab == 0 && selectedFolder == null) {
                         IconButton(onClick = { isAlbumGrid = !isAlbumGrid }) {
                             Icon(
                                 if (isAlbumGrid) Icons.Default.List else Icons.Default.GridView,
@@ -69,15 +104,15 @@ fun GalleryScreen(viewModel: GalleryViewModel, onRequestPermission: () -> Unit) 
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },
         bottomBar = {
-            if (selectedFolder == null) {
+            if (selectedFolder == null && !isSelectionMode) {
                 NavigationBar {
                     NavigationBarItem(
                         icon = { Icon(Icons.Default.PhotoAlbum, contentDescription = "Albums") },
@@ -109,16 +144,49 @@ fun GalleryScreen(viewModel: GalleryViewModel, onRequestPermission: () -> Unit) 
                 is GalleryState.Success -> {
                     if (selectedFolder != null) {
                         val images = state.allImages[selectedFolder?.id] ?: emptyList()
-                        ImageGrid(images, defaultSpan = 3)
+                        ImageGrid(
+                            images = images,
+                            defaultSpan = 3,
+                            selectedImages = selectedImages,
+                            isSelectionMode = isSelectionMode,
+                            onToggleSelection = { viewModel.toggleSelection(it) },
+                            onImageClick = { selectedImageToView = it }
+                        )
                     } else {
                         if (currentTab == 0) {
                             FolderList(state.folders, isGrid = isAlbumGrid) { selectedFolder = it }
                         } else {
-                            PhotosTab(photosByMonth = state.photosByMonth)
+                            PhotosTab(
+                                photosByMonth = state.photosByMonth,
+                                selectedImages = selectedImages,
+                                isSelectionMode = isSelectionMode,
+                                onToggleSelection = { viewModel.toggleSelection(it) },
+                                onImageClick = { selectedImageToView = it }
+                            )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun FullScreenImageViewer(image: ImageItem, onBack: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black)
+    ) {
+        AsyncImage(
+            model = image.uri,
+            contentDescription = image.name,
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize()
+        )
+        IconButton(
+            onClick = onBack,
+            modifier = Modifier.padding(top = 40.dp, start = 16.dp).background(Color(0x88000000), CircleShape)
+        ) {
+            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
         }
     }
 }
@@ -204,7 +272,13 @@ fun FolderCardGridVersion(folder: FolderItem, onClick: () -> Unit) {
 }
 
 @Composable
-fun PhotosTab(photosByMonth: Map<String, List<ImageItem>>) {
+fun PhotosTab(
+    photosByMonth: Map<String, List<ImageItem>>,
+    selectedImages: Set<Long>,
+    isSelectionMode: Boolean,
+    onToggleSelection: (Long) -> Unit,
+    onImageClick: (ImageItem) -> Unit
+) {
     var spanCount by remember { mutableStateOf(3) }
     var currentScale by remember { mutableStateOf(1f) }
     
@@ -213,10 +287,10 @@ fun PhotosTab(photosByMonth: Map<String, List<ImageItem>>) {
             .pointerInput(Unit) {
                 detectTransformGestures { _, _, zoom, _ ->
                     currentScale *= zoom
-                    if (currentScale > 1.5f) {
+                    if (currentScale > 1.25f) { 
                         spanCount = max(2, spanCount - 1)
                         currentScale = 1f
-                    } else if (currentScale < 0.6f) {
+                    } else if (currentScale < 0.75f) { 
                         spanCount = min(5, spanCount + 1)
                         currentScale = 1f
                     }
@@ -239,11 +313,15 @@ fun PhotosTab(photosByMonth: Map<String, List<ImageItem>>) {
                     )
                 }
                 items(images) { image ->
-                    AsyncImage(
-                        model = image.uri,
-                        contentDescription = image.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.aspectRatio(1f).clip(RoundedCornerShape(8.dp))
+                    SelectableImage(
+                        image = image,
+                        isSelected = selectedImages.contains(image.id),
+                        isSelectionMode = isSelectionMode,
+                        onToggle = { onToggleSelection(image.id) },
+                        onClick = {
+                            if (isSelectionMode) onToggleSelection(image.id)
+                            else onImageClick(image)
+                        }
                     )
                 }
             }
@@ -252,7 +330,14 @@ fun PhotosTab(photosByMonth: Map<String, List<ImageItem>>) {
 }
 
 @Composable
-fun ImageGrid(images: List<ImageItem>, defaultSpan: Int = 3) {
+fun ImageGrid(
+    images: List<ImageItem>, 
+    defaultSpan: Int = 3,
+    selectedImages: Set<Long>,
+    isSelectionMode: Boolean,
+    onToggleSelection: (Long) -> Unit,
+    onImageClick: (ImageItem) -> Unit
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(defaultSpan),
         contentPadding = PaddingValues(8.dp),
@@ -260,12 +345,59 @@ fun ImageGrid(images: List<ImageItem>, defaultSpan: Int = 3) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(images) { image ->
-            AsyncImage(
-                model = image.uri,
-                contentDescription = image.name,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.aspectRatio(1f).clip(RoundedCornerShape(12.dp))
+            SelectableImage(
+                image = image,
+                isSelected = selectedImages.contains(image.id),
+                isSelectionMode = isSelectionMode,
+                onToggle = { onToggleSelection(image.id) },
+                onClick = {
+                    if (isSelectionMode) onToggleSelection(image.id)
+                    else onImageClick(image)
+                }
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun SelectableImage(
+    image: ImageItem,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onToggle: () -> Unit,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(8.dp))
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onToggle
+            )
+    ) {
+        AsyncImage(
+            model = image.uri,
+            contentDescription = image.name,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x66000000))
+                    .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "Selected",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
         }
     }
 }

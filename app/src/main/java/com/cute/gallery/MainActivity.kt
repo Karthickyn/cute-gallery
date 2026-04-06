@@ -1,7 +1,9 @@
 package com.cute.gallery
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -36,10 +38,29 @@ class MainActivity : ComponentActivity() {
             CuteGalleryTheme {
                 GalleryScreen(
                     viewModel = viewModel,
-                    onRequestPermission = { checkPermissionAndLoad() }
+                    onRequestPermission = { checkPermissionAndLoad() },
+                    onShareImages = { uris -> shareImages(uris) }
                 )
             }
         }
+    }
+    
+    private fun shareImages(duris: List<Uri>) {
+        if (duris.isEmpty()) return
+        
+        val intent = Intent().apply {
+            action = if (duris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND
+            type = "image/*"
+            if (duris.size > 1) {
+                val arrayList = ArrayList<Uri>(duris)
+                putParcelableArrayListExtra(Intent.EXTRA_STREAM, arrayList)
+            } else {
+                putExtra(Intent.EXTRA_STREAM, duris.first())
+            }
+            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+        }
+        val chooser = Intent.createChooser(intent, "Share Gallery Images")
+        startActivity(chooser)
     }
     
     override fun onResume() {

@@ -1,6 +1,7 @@
 package com.cute.gallery.viewmodel
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.cute.gallery.model.FolderItem
@@ -9,6 +10,7 @@ import com.cute.gallery.repository.GalleryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 sealed class GalleryState {
@@ -28,9 +30,38 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     
     private val _uiState = MutableStateFlow<GalleryState>(GalleryState.Loading)
     val uiState: StateFlow<GalleryState> = _uiState.asStateFlow()
+
+    private val _selectedImages = MutableStateFlow<Set<Long>>(emptySet())
+    val selectedImages: StateFlow<Set<Long>> = _selectedImages.asStateFlow()
     
     fun setPermissionRequired() {
         _uiState.value = GalleryState.PermissionRequired
+    }
+    
+    fun toggleSelection(imageId: Long) {
+        _selectedImages.update { current ->
+            if (current.contains(imageId)) {
+                current - imageId
+            } else {
+                current + imageId
+            }
+        }
+    }
+    
+    fun clearSelection() {
+        _selectedImages.value = emptySet()
+    }
+    
+    fun getSelectedUris(): List<Uri> {
+        val state = _uiState.value
+        if (state is GalleryState.Success) {
+            val selectedIds = _selectedImages.value
+            return state.allImages.values.flatten()
+                .filter { it.id in selectedIds }
+                .distinctBy { it.id }
+                .map { it.uri }
+        }
+        return emptyList()
     }
     
     fun loadGallery() {
