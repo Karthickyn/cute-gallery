@@ -6,8 +6,11 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.MediaStore
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.core.content.ContextCompat
@@ -18,6 +21,7 @@ import com.cute.gallery.viewmodel.GalleryViewModel
 class MainActivity : ComponentActivity() {
 
     private val viewModel: GalleryViewModel by viewModels()
+    private lateinit var deleteLauncher: ActivityResultLauncher<IntentSenderRequest>
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -32,6 +36,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        deleteLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            if (result.resultCode == RESULT_OK) {
+                viewModel.loadGallery()
+            }
+        }
+        
         checkPermissionAndLoad()
         
         setContent {
@@ -39,7 +49,8 @@ class MainActivity : ComponentActivity() {
                 GalleryScreen(
                     viewModel = viewModel,
                     onRequestPermission = { checkPermissionAndLoad() },
-                    onShareImages = { uris -> shareImages(uris) }
+                    onShareImages = { uris -> shareImages(uris) },
+                    onRequestDelete = { uri -> requestDelete(uri) }
                 )
             }
         }
@@ -61,6 +72,21 @@ class MainActivity : ComponentActivity() {
         }
         val chooser = Intent.createChooser(intent, "Share Gallery Images")
         startActivity(chooser)
+    }
+    
+    private fun requestDelete(uri: Uri) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val intentSender = MediaStore.createDeleteRequest(contentResolver, listOf(uri)).intentSender
+                val senderRequest = IntentSenderRequest.Builder(intentSender).build()
+                deleteLauncher.launch(senderRequest)
+            } else {
+                contentResolver.delete(uri, null, null)
+                viewModel.loadGallery()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
     
     override fun onResume() {
