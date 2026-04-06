@@ -10,6 +10,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
@@ -18,6 +22,7 @@ import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -318,14 +323,27 @@ fun ZoomableImage(image: ImageItem, onSingleTap: () -> Unit) {
                 )
             }
             .pointerInput(image.id) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    scale = max(1f, min(5f, scale * zoom))
-                    val boundX = (size.width * (scale - 1)) / 2
-                    val boundY = (size.height * (scale - 1)) / 2
-                    offset = Offset(
-                        x = (offset.x + pan.x * scale).coerceIn(-boundX, boundX),
-                        y = (offset.y + pan.y * scale).coerceIn(-boundY, boundY)
-                    )
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val zoom = event.calculateZoom()
+                        val pan = event.calculatePan()
+                        
+                        if (zoom != 1f || scale > 1f) {
+                            scale = max(1f, min(5f, scale * zoom))
+                            if (scale > 1f) {
+                                event.changes.forEach { it.consume() }
+                                val boundX = (size.width * (scale - 1)) / 2
+                                val boundY = (size.height * (scale - 1)) / 2
+                                offset = Offset(
+                                    x = (offset.x + pan.x * scale).coerceIn(-boundX, boundX),
+                                    y = (offset.y + pan.y * scale).coerceIn(-boundY, boundY)
+                                )
+                            } else {
+                                offset = Offset.Zero
+                            }
+                        }
+                    }
                 }
             }
     ) {
@@ -424,14 +442,20 @@ fun PhotosTab(
     Box(
         modifier = Modifier.fillMaxSize()
             .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    currentScale *= zoom
-                    if (currentScale < 0.8f) { // Pinch out -> more items
-                        spanCount = min(6, spanCount + 1)
-                        currentScale = 1f
-                    } else if (currentScale > 1.25f) { // Pinch in -> fewer items
-                        spanCount = max(1, spanCount - 1)
-                        currentScale = 1f
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val zoom = event.calculateZoom()
+                        if (zoom != 1f && zoom != 0f) {
+                            currentScale *= zoom
+                            if (currentScale < 0.8f) { // Pinch out -> more columns
+                                spanCount = min(6, spanCount + 1)
+                                currentScale = 1f
+                            } else if (currentScale > 1.25f) { // Pinch in -> fewer columns
+                                spanCount = max(1, spanCount - 1)
+                                currentScale = 1f
+                            }
+                        }
                     }
                 }
             }
@@ -483,14 +507,20 @@ fun ImageGrid(
     Box(
         modifier = Modifier.fillMaxSize()
             .pointerInput(Unit) {
-                detectTransformGestures { _, _, zoom, _ ->
-                    currentScale *= zoom
-                    if (currentScale < 0.8f) { // Pinch out -> more items
-                        spanCount = min(6, spanCount + 1)
-                        currentScale = 1f
-                    } else if (currentScale > 1.25f) { // Pinch in -> fewer items
-                        spanCount = max(1, spanCount - 1)
-                        currentScale = 1f
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val zoom = event.calculateZoom()
+                        if (zoom != 1f && zoom != 0f) {
+                            currentScale *= zoom
+                            if (currentScale < 0.8f) { // Pinch out -> more columns
+                                spanCount = min(6, spanCount + 1)
+                                currentScale = 1f
+                            } else if (currentScale > 1.25f) { // Pinch in -> fewer columns
+                                spanCount = max(1, spanCount - 1)
+                                currentScale = 1f
+                            }
+                        }
                     }
                 }
             }
