@@ -3,6 +3,7 @@ package com.cute.gallery.ui
 import android.content.Context
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -222,15 +223,6 @@ fun EditorScreen(image: ImageItem, onClose: () -> Unit, onSave: () -> Unit) {
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-            
-            // Computes the color filter
-            val colorMatrix = ColorMatrix().apply {
-                if (state.filterMatrix != null) {
-                    setToCustomMatrix(state.filterMatrix!!) // Fake custom assignment; since Compose doesn't expose raw matrix setters easily, we rely on color filter combinations or just bypass for generic.
-                    // Note: Compose ColorMatrix allows raw values via ColorMatrix(floatArray)
-                }
-                // Very simplified mock for brightness/saturation
-            }
             
             val finalFilter = if (state.filterMatrix != null) ColorFilter.colorMatrix(ColorMatrix(state.filterMatrix!!)) else null
 
