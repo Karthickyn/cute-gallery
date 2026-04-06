@@ -2,11 +2,15 @@ package com.cute.gallery.ui
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,7 +18,6 @@ import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -224,6 +227,7 @@ fun FullScreenImageViewer(
     val safeIndex = initialIndex.coerceIn(0, max(0, images.size - 1))
     val pagerState = rememberPagerState(initialPage = safeIndex) { images.size }
     var showDetails by remember { mutableStateOf(false) }
+    var isUiVisible by remember { mutableStateOf(true) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
@@ -233,37 +237,52 @@ fun FullScreenImageViewer(
         ) { page ->
             if (page in images.indices) {
                 val image = images[page]
-                ZoomableImage(image = image)
+                ZoomableImage(image = image, onSingleTap = { isUiVisible = !isUiVisible })
             }
         }
         
-        IconButton(
-            onClick = onBack,
-            modifier = Modifier.padding(top = 40.dp, start = 16.dp).background(Color(0x88000000), CircleShape)
-        ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+        AnimatedVisibility(visible = isUiVisible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0x88000000))
+                    .padding(top = 40.dp, bottom = 12.dp, start = 8.dp, end = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                }
+                Text(
+                    text = "${pagerState.currentPage + 1} of ${images.size}",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
         }
         
         val activeImage = images[pagerState.currentPage]
-        Row(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Color(0x88000000))
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            IconButton(onClick = { onShare(activeImage.uri) }) {
-                Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
-            }
-            IconButton(onClick = { onEdit(activeImage) }) {
-                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.White)
-            }
-            IconButton(onClick = { showDetails = true }) {
-                Icon(Icons.Default.Info, contentDescription = "Details", tint = Color.White)
-            }
-            IconButton(onClick = { onDelete(activeImage.uri) }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+        
+        AnimatedVisibility(visible = isUiVisible, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0x88000000))
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                IconButton(onClick = { onShare(activeImage.uri) }) {
+                    Icon(Icons.Default.Share, contentDescription = "Share", tint = Color.White)
+                }
+                IconButton(onClick = { onEdit(activeImage) }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color.White)
+                }
+                IconButton(onClick = { showDetails = true }) {
+                    Icon(Icons.Default.Info, contentDescription = "Details", tint = Color.White)
+                }
+                IconButton(onClick = { onDelete(activeImage.uri) }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.White)
+                }
             }
         }
         
@@ -282,13 +301,22 @@ fun FullScreenImageViewer(
 }
 
 @Composable
-fun ZoomableImage(image: ImageItem) {
+fun ZoomableImage(image: ImageItem, onSingleTap: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .pointerInput(image.id) {
+                detectTapGestures(
+                    onTap = { onSingleTap() },
+                    onDoubleTap = {
+                        scale = if (scale > 1f) 1f else 3f
+                        offset = Offset.Zero
+                    }
+                )
+            }
             .pointerInput(image.id) {
                 detectTransformGestures { _, pan, zoom, _ ->
                     scale = max(1f, min(5f, scale * zoom))
@@ -398,11 +426,11 @@ fun PhotosTab(
             .pointerInput(Unit) {
                 detectTransformGestures { _, _, zoom, _ ->
                     currentScale *= zoom
-                    if (currentScale > 1.25f) { 
-                        spanCount = max(2, spanCount - 1)
+                    if (currentScale < 0.8f) { // Pinch out -> more items
+                        spanCount = min(6, spanCount + 1)
                         currentScale = 1f
-                    } else if (currentScale < 0.75f) { 
-                        spanCount = min(5, spanCount + 1)
+                    } else if (currentScale > 1.25f) { // Pinch in -> fewer items
+                        spanCount = max(1, spanCount - 1)
                         currentScale = 1f
                     }
                 }
@@ -457,11 +485,11 @@ fun ImageGrid(
             .pointerInput(Unit) {
                 detectTransformGestures { _, _, zoom, _ ->
                     currentScale *= zoom
-                    if (currentScale > 1.25f) { 
-                        spanCount = max(2, spanCount - 1)
-                        currentScale = 1f
-                    } else if (currentScale < 0.75f) { 
+                    if (currentScale < 0.8f) { // Pinch out -> more items
                         spanCount = min(6, spanCount + 1)
+                        currentScale = 1f
+                    } else if (currentScale > 1.25f) { // Pinch in -> fewer items
+                        spanCount = max(1, spanCount - 1)
                         currentScale = 1f
                     }
                 }
