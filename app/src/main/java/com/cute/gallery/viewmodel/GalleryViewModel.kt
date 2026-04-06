@@ -14,7 +14,11 @@ import kotlinx.coroutines.launch
 sealed class GalleryState {
     object Loading : GalleryState()
     object PermissionRequired : GalleryState()
-    data class Success(val folders: List<FolderItem>, val allImages: Map<String, List<ImageItem>>) : GalleryState()
+    data class Success(
+        val folders: List<FolderItem>, 
+        val allImages: Map<String, List<ImageItem>>,
+        val photosByMonth: Map<String, List<ImageItem>>
+    ) : GalleryState()
     data class Error(val message: String) : GalleryState()
 }
 
@@ -36,7 +40,14 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 val data = repository.getFoldersAndImages()
                 val folders = data.keys.toList().sortedBy { it.name }
                 val imagesMap = data.entries.associate { it.key.id to it.value }
-                _uiState.value = GalleryState.Success(folders, imagesMap)
+                
+                // Extract all images
+                val allImagesList = data.values.flatten()
+                    .distinctBy { it.id } // Just in case
+                    .sortedByDescending { it.dateAdded }
+                val photosByMonth = allImagesList.groupBy { it.monthYear }
+                
+                _uiState.value = GalleryState.Success(folders, imagesMap, photosByMonth)
             } catch (e: Exception) {
                 _uiState.value = GalleryState.Error(e.message ?: "Unknown error")
             }
